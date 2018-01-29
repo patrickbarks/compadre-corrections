@@ -1,0 +1,248 @@
+---
+title: "Compadre Corrections"
+author: "Patrick Barks"
+date: '2018-01-25'
+output: html_document
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+&nbsp;
+
+### Load libraries and Com(p)adre databases, and adjust console width
+
+```{r, message = F}
+# load libraries
+library(dplyr)
+library(tidyr)
+library(tibble)
+library(purrr)
+
+# load Comadre and Compadre databases
+load('COMADRE_v.X.X.X.RData')
+load('COMPADRE_v.X.X.X.RData')
+
+# increase console width
+options(width = 120)
+```
+
+&nbsp;
+
+### `DOI.ISBN` with >1 unique `Authors`, `YearPublication`, or `Journal`
+
+A given DOI or ISBN should be associated with a single publication (e.g a single
+journal, year, and set of authors). The code chunk below finds instances where
+this is not the case. Some of these cases seem to reflect data entry errors, but
+some represent subtle differences in spelling or formatting of author names
+(e.g. spelled with vs. without accents, only the first author is listed vs. all
+authors listed, etc.). Also, some discrepencies in `YearPublication` for a given
+DOI may reflect the time between an 'early-online' version and the final
+published version.
+
+```{r}
+# COMADRE
+comadre$metadata %>% 
+  filter(!is.na(DOI.ISBN)) %>% 
+  group_by(DOI.ISBN) %>% 
+  mutate(n_uniq_author = length(unique(Authors)),
+         n_uniq_year = length(unique(YearPublication)),
+         n_uniq_journal = length(unique(Journal))) %>% 
+  ungroup() %>% 
+  filter(n_uniq_author > 1 | n_uniq_year > 1 | n_uniq_journal > 1) %>% 
+  dplyr::select(DOI.ISBN, Journal, Year = YearPublication, Authors) %>% 
+  unique() %>% 
+  arrange(DOI.ISBN, Authors) %>% 
+  mutate(Authors = substr(Authors, 1, 40)) %>% 
+  as.data.frame()
+```
+
+```{r}
+# COMPADRE
+compadre$metadata %>% 
+  filter(!is.na(DOI.ISBN)) %>% 
+  group_by(DOI.ISBN) %>% 
+  mutate(n_uniq_author = length(unique(Authors)),
+         n_uniq_year = length(unique(YearPublication)),
+         n_uniq_journal = length(unique(Journal))) %>% 
+  ungroup() %>% 
+  filter(n_uniq_author > 1 | n_uniq_year > 1 | n_uniq_journal > 1) %>% 
+  dplyr::select(DOI.ISBN, Journal, Year = YearPublication, Authors) %>% 
+  unique() %>% 
+  arrange(DOI.ISBN, Authors) %>% 
+  mutate(Authors = substr(Authors, 1, 25)) %>% 
+  as.data.frame()
+```
+
+&nbsp;
+
+### `Authors`x`YearPublication`x`Journal` with >1 unique `DOI.ISBN`
+
+A given combination of author, year, and journal should generally correspond to
+a single DOI or ISBN (though of course a given set of authors could publish more
+than one paper in a given journal and year). Below are instances where this is
+not the case. Some may reflect publications legitimately having multiple DOIs
+for different versions (e.g. 'early-online version' vs. published version vs.
+corrected version), though others seem to reflect data entry errors.
+
+```{r}
+# COMADRE
+comadre$metadata %>% 
+  mutate(AuthorJournalYear = paste(Authors, Journal, YearPublication)) %>% 
+  group_by(AuthorJournalYear) %>% 
+  mutate(n = length(unique(DOI.ISBN))) %>% 
+  ungroup() %>% 
+  filter(n > 1) %>% 
+  dplyr::select(Authors, Year = YearPublication, Journal, DOI.ISBN) %>% 
+  unique() %>% 
+  arrange(Authors) %>% 
+  mutate(Authors = substr(Authors, 1, 35)) %>% 
+  as.data.frame()
+```
+
+```{r}
+# COMPADRE
+compadre$metadata %>% 
+  mutate(AuthorJournalYear = paste(Authors, Journal, YearPublication)) %>% 
+  group_by(AuthorJournalYear) %>% 
+  mutate(n = length(unique(DOI.ISBN))) %>% 
+  ungroup() %>% 
+  filter(n > 1) %>% 
+  dplyr::select(Authors, Year = YearPublication, Journal, DOI.ISBN) %>% 
+  unique() %>% 
+  arrange(Authors) %>% 
+  mutate(Authors = substr(Authors, 1, 35)) %>% 
+  as.data.frame()
+```
+
+&nbsp;
+
+### Irregular formatting of author names
+
+The code chunk below finds instances of irregular formatting in the `Authors`
+column (e.g. multiple sequential spaces, or commas where there should be
+semicolons).
+
+```{r}
+# check for instances where Authors column contains 2+ spaces in sequence,
+#  semicolons followed by character (with no separating space), or commas
+#  where there should be semicolons
+irregular <- '[[:space:]][[:space:]]+|\\;[[:alpha:]]+|\\,+'
+```
+
+```{r}
+# COMADRE
+comadre$metadata %>% 
+  dplyr::select(DOI.ISBN, Journal, Year = YearPublication, Authors) %>% 
+  unique() %>% 
+  mutate(irreg = grepl(irregular, Authors)) %>% 
+  filter(irreg == TRUE) %>% 
+  dplyr::select(-irreg) %>% 
+  arrange(Authors) %>% 
+  mutate(Authors = substr(Authors, 1, 40))
+```
+
+```{r}
+# COMPADRE
+compadre$metadata %>% 
+  dplyr::select(DOI.ISBN, Journal, Year = YearPublication, Authors) %>% 
+  unique() %>% 
+  mutate(irreg = grepl(irregular, Authors)) %>% 
+  filter(irreg == TRUE) %>% 
+  dplyr::select(-irreg) %>% 
+  arrange(Authors) %>% 
+  mutate(Authors = substr(Authors, 1, 40))
+```
+
+&nbsp;
+
+### Country codes different from ISO 3 standard
+
+Country codes listed in the column `Country` should conform to the ISO 3
+standard. The code chunk below finds instances where this is not the case.
+
+```{r}
+# Read list of ISO 3 country codes; obtained manually from:
+# https://unstats.un.org/unsd/tradekb/knowledgebase/country-code
+country_codes <- read.csv('country_codes.csv')
+```
+
+```{r}
+# function to spread entries containing multiple country codes (separated by ;)
+#  across separate lines
+SplitCountries <- function(x, DOI.ISBN, Journal, Year, Authors) {
+  tibble(Country = strsplit(as.character(x), '; ')[[1]],
+         DOI.ISBN, Journal, Year, Authors)
+}
+```
+
+```{r}
+# COMADRE
+comadre$metadata %>% 
+  rowwise() %>% 
+  do(SplitCountries(.$Country, .$DOI.ISBN, .$Journal,
+                    .$YearPublication, .$Authors)) %>% 
+  ungroup() %>% unique() %>% 
+  filter(!Country %in% country_codes$ISO, !is.na(Country)) %>% 
+  mutate(Authors = substr(Authors, 1, 20)) %>% 
+  as.data.frame()
+```
+
+```{r}
+# COMPADRE
+compadre$metadata %>% 
+  rowwise() %>% 
+  do(SplitCountries(.$Country, .$DOI.ISBN, .$Journal,
+                    .$YearPublication, .$Authors)) %>% 
+  ungroup() %>% unique() %>% 
+  filter(!Country %in% country_codes$ISO, !is.na(Country)) %>% 
+  mutate(Authors = substr(Authors, 1, 35)) %>% 
+  as.data.frame()
+```
+
+&nbsp;
+
+### Check for nonstandard values of `MatrixClassOrganized`
+
+Values of `MatrixClassOrganized` should be one of 'active', 'dorm', or 'prop'
+(or possibly NA). The code chunk below finds instances where this is not the
+case.
+
+```{r}
+# function to check whether MatrixClassOrganized column contains 
+#  values other than 'active', 'dorm', 'prop', or <NA>
+MatrixClassCheck <- function (x) {
+  any(!x$MatrixClassOrganized %in% c(NA, 'active', 'dorm', 'prop'))
+}
+```
+
+```{r}
+# COMADRE
+tibble(DOI.ISBN = comadre$metadata$DOI.ISBN,
+       Year = comadre$metadata$YearPublication,
+       Authors = comadre$metadata$Authors,
+       matrixClass = comadre$matrixClass) %>%
+  mutate(flag = map_lgl(matrixClass, MatrixClassCheck)) %>% 
+  filter(flag == TRUE) %>% 
+  unnest() %>% 
+  dplyr::select(-flag, -MatrixClassAuthor) %>% 
+  mutate(Authors = substr(Authors, 1, 25)) %>% 
+  mutate(MatrixClassOrganized = substr(MatrixClassOrganized, 1, 20)) %>% 
+  as.data.frame()
+```
+
+```{r}
+# COMPADRE
+tibble(DOI.ISBN = compadre$metadata$DOI.ISBN,
+       Year = compadre$metadata$YearPublication,
+       Authors = compadre$metadata$Authors,
+       matrixClass = compadre$matrixClass) %>%
+  mutate(flag = map_lgl(matrixClass, MatrixClassCheck)) %>% 
+  filter(flag == TRUE) %>% 
+  unnest() %>% 
+  dplyr::select(-flag, -MatrixClassAuthor) %>% 
+  mutate(Authors = substr(Authors, 1, 25)) %>% 
+  mutate(MatrixClassOrganized = substr(MatrixClassOrganized, 1, 20)) %>% 
+  as.data.frame()
+```
