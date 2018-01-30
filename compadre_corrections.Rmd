@@ -1,5 +1,5 @@
 ---
-title: "Compadre Corrections"
+title: "COM(P)ADRE Corrections"
 author: "Patrick Barks"
 date: '2018-01-25'
 output: github_document
@@ -11,7 +11,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 &nbsp;
 
-### Load libraries and Com(p)adre databases, and adjust console width
+### Preliminaries
 
 ```{r, message = F}
 # load libraries
@@ -24,6 +24,10 @@ library(purrr)
 load('COMADRE_v.X.X.X.RData')
 load('COMPADRE_v.X.X.X.RData')
 
+# add row ids to metadata
+comadre$metadata$Row <- 1:nrow(comadre$metadata)
+compadre$metadata$Row <- 1:nrow(compadre$metadata)
+
 # increase console width
 options(width = 120)
 ```
@@ -34,12 +38,8 @@ options(width = 120)
 
 A given DOI or ISBN should be associated with a single publication (e.g a single
 journal, year, and set of authors). The code chunk below finds instances where
-this is not the case. Some of these cases seem to reflect data entry errors, but
-some represent subtle differences in spelling or formatting of author names
-(e.g. spelled with vs. without accents, only the first author is listed vs. all
-authors listed, etc.). Also, some discrepencies in `YearPublication` for a given
-DOI may reflect the time between an 'early-online' version and the final
-published version.
+this is not the case. (Note: some of these cases are due to subtle differences
+in spelling or formatting of author names.)
 
 ```{r}
 # COMADRE
@@ -70,7 +70,7 @@ compadre$metadata %>%
   filter(n_uniq_author > 1 | n_uniq_year > 1 | n_uniq_journal > 1) %>% 
   dplyr::select(DOI.ISBN, Journal, Year = YearPublication, Authors) %>% 
   unique() %>% 
-  arrange(DOI.ISBN, Authors) %>% 
+  arrange(DOI.ISBN, Authors) %>%
   mutate(Authors = substr(Authors, 1, 25)) %>% 
   as.data.frame()
 ```
@@ -80,11 +80,8 @@ compadre$metadata %>%
 ### `Authors`x`YearPublication`x`Journal` with >1 unique `DOI.ISBN`
 
 A given combination of author, year, and journal should generally correspond to
-a single DOI or ISBN (though of course a given set of authors could publish more
-than one paper in a given journal and year). Below are instances where this is
-not the case. Some may reflect publications legitimately having multiple DOIs
-for different versions (e.g. 'early-online version' vs. published version vs.
-corrected version), though others seem to reflect data entry errors.
+a single DOI or ISBN (though legitimate exceptions are possible). The code chunk
+below finds instances where this is not the case.
 
 ```{r}
 # COMADRE
@@ -171,33 +168,36 @@ country_codes <- read.csv('country_codes.csv')
 ```{r}
 # function to spread entries containing multiple country codes (separated by ;)
 #  across separate lines
-SplitCountries <- function(x, DOI.ISBN, Journal, Year, Authors) {
-  tibble(Country = strsplit(as.character(x), '; ')[[1]],
-         DOI.ISBN, Journal, Year, Authors)
+SplitCountries <- function(x) {
+  data.frame(Country = strsplit(as.character(x), '; ')[[1]], stringsAsFactors = F)
 }
 ```
 
 ```{r}
 # COMADRE
 comadre$metadata %>% 
-  rowwise() %>% 
-  do(SplitCountries(.$Country, .$DOI.ISBN, .$Journal,
-                    .$YearPublication, .$Authors)) %>% 
-  ungroup() %>% unique() %>% 
+  group_by(Row) %>% 
+  do(SplitCountries(.$Country)) %>% 
+  ungroup() %>% 
+  left_join(dplyr::select(comadre$metadata, Row, DOI.ISBN, Journal, Authors), by = 'Row') %>% 
+  dplyr::select(-Row) %>% 
   filter(!Country %in% country_codes$ISO, !is.na(Country)) %>% 
-  mutate(Authors = substr(Authors, 1, 20)) %>% 
+  unique() %>% 
+  mutate(Authors = substr(Authors, 1, 25)) %>% 
   as.data.frame()
 ```
 
 ```{r}
 # COMPADRE
 compadre$metadata %>% 
-  rowwise() %>% 
-  do(SplitCountries(.$Country, .$DOI.ISBN, .$Journal,
-                    .$YearPublication, .$Authors)) %>% 
-  ungroup() %>% unique() %>% 
+  group_by(Row) %>% 
+  do(SplitCountries(.$Country)) %>% 
+  ungroup() %>% 
+  left_join(dplyr::select(compadre$metadata, Row, DOI.ISBN, Journal, Authors), by = 'Row') %>% 
+  dplyr::select(-Row) %>% 
   filter(!Country %in% country_codes$ISO, !is.na(Country)) %>% 
-  mutate(Authors = substr(Authors, 1, 35)) %>% 
+  unique() %>%
+  mutate(Authors = substr(Authors, 1, 35)) %>%
   as.data.frame()
 ```
 

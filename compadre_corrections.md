@@ -1,11 +1,11 @@
-Compadre Corrections
+COM(P)ADRE Corrections
 ================
 Patrick Barks
 2018-01-25
 
  
 
-### Load libraries and Com(p)adre databases, and adjust console width
+### Preliminaries
 
 ``` r
 # load libraries
@@ -18,6 +18,10 @@ library(purrr)
 load('COMADRE_v.X.X.X.RData')
 load('COMPADRE_v.X.X.X.RData')
 
+# add row ids to metadata
+comadre$metadata$Row <- 1:nrow(comadre$metadata)
+compadre$metadata$Row <- 1:nrow(compadre$metadata)
+
 # increase console width
 options(width = 120)
 ```
@@ -26,7 +30,7 @@ options(width = 120)
 
 ### `DOI.ISBN` with &gt;1 unique `Authors`, `YearPublication`, or `Journal`
 
-A given DOI or ISBN should be associated with a single publication (e.g a single journal, year, and set of authors). The code chunk below finds instances where this is not the case. Some of these cases seem to reflect data entry errors, but some represent subtle differences in spelling or formatting of author names (e.g. spelled with vs. without accents, only the first author is listed vs. all authors listed, etc.). Also, some discrepencies in `YearPublication` for a given DOI may reflect the time between an 'early-online' version and the final published version.
+A given DOI or ISBN should be associated with a single publication (e.g a single journal, year, and set of authors). The code chunk below finds instances where this is not the case. (Note: some of these cases are due to subtle differences in spelling or formatting of author names.)
 
 ``` r
 # COMADRE
@@ -73,7 +77,7 @@ compadre$metadata %>%
   filter(n_uniq_author > 1 | n_uniq_year > 1 | n_uniq_journal > 1) %>% 
   dplyr::select(DOI.ISBN, Journal, Year = YearPublication, Authors) %>% 
   unique() %>% 
-  arrange(DOI.ISBN, Authors) %>% 
+  arrange(DOI.ISBN, Authors) %>%
   mutate(Authors = substr(Authors, 1, 25)) %>% 
   as.data.frame()
 ```
@@ -116,7 +120,7 @@ compadre$metadata %>%
 
 ### `Authors`x`YearPublication`x`Journal` with &gt;1 unique `DOI.ISBN`
 
-A given combination of author, year, and journal should generally correspond to a single DOI or ISBN (though of course a given set of authors could publish more than one paper in a given journal and year). Below are instances where this is not the case. Some may reflect publications legitimately having multiple DOIs for different versions (e.g. 'early-online version' vs. published version vs. corrected version), though others seem to reflect data entry errors.
+A given combination of author, year, and journal should generally correspond to a single DOI or ISBN (though legitimate exceptions are possible). The code chunk below finds instances where this is not the case.
 
 ``` r
 # COMADRE
@@ -245,54 +249,57 @@ country_codes <- read.csv('country_codes.csv')
 ``` r
 # function to spread entries containing multiple country codes (separated by ;)
 #  across separate lines
-SplitCountries <- function(x, DOI.ISBN, Journal, Year, Authors) {
-  tibble(Country = strsplit(as.character(x), '; ')[[1]],
-         DOI.ISBN, Journal, Year, Authors)
+SplitCountries <- function(x) {
+  data.frame(Country = strsplit(as.character(x), '; ')[[1]], stringsAsFactors = F)
 }
 ```
 
 ``` r
 # COMADRE
 comadre$metadata %>% 
-  rowwise() %>% 
-  do(SplitCountries(.$Country, .$DOI.ISBN, .$Journal,
-                    .$YearPublication, .$Authors)) %>% 
-  ungroup() %>% unique() %>% 
+  group_by(Row) %>% 
+  do(SplitCountries(.$Country)) %>% 
+  ungroup() %>% 
+  left_join(dplyr::select(comadre$metadata, Row, DOI.ISBN, Journal, Authors), by = 'Row') %>% 
+  dplyr::select(-Row) %>% 
   filter(!Country %in% country_codes$ISO, !is.na(Country)) %>% 
-  mutate(Authors = substr(Authors, 1, 20)) %>% 
+  unique() %>% 
+  mutate(Authors = substr(Authors, 1, 25)) %>% 
   as.data.frame()
 ```
 
-    ##       Country                        DOI.ISBN                       Journal Year              Authors
-    ## 1         ANT         10.1111/1365-2656.12399                   J Anim Ecol 2015 O'Farrell; Salguero-
-    ## 2           3    10.1016/j.ecoenv.2012.01.019     Ecotoxicol Environ Safety 2012 Bergek; Ma; Vetemaa;
-    ## 3           1    10.1016/j.ecoenv.2012.01.019     Ecotoxicol Environ Safety 2012 Bergek; Ma; Vetemaa;
-    ## 4          1a    10.1016/j.ecoenv.2012.01.019     Ecotoxicol Environ Safety 2012 Bergek; Ma; Vetemaa;
-    ## 5          1b    10.1016/j.ecoenv.2012.01.019     Ecotoxicol Environ Safety 2012 Bergek; Ma; Vetemaa;
-    ## 6         LAB       10.1007/s11270-014-2207-3         Water Air Soil Pollut 2014 Santadino; Coviella;
-    ## 7  Simulation 10.1016/j.ecolmodel.2012.02.018                    Ecol Model 2012 Lesnoff; Corniaux; H
-    ## 8           1               10.1111/nrm.12034                   Nat Res Mod 2014 Holma; Lindroos; Oin
-    ## 9          57               978-1-100-23563-9 Can Tech Report Fish & Aq Sci 2014 Vélez-Espino; Ford; 
-    ## 10         59               978-1-100-23563-9 Can Tech Report Fish & Aq Sci 2014 Vélez-Espino; Ford; 
-    ## 11    NODC-27                10.3354/esr00657            Endangered Spp Res 2015      Whitehead; Gero
-    ## 12         27                            <NA>                          NMFS 2009             Richards
-    ## 13         23                            <NA>                          NMFS 2009             Richards
+    ##       Country                        DOI.ISBN                       Journal                   Authors
+    ## 1         ANT         10.1111/1365-2656.12399                   J Anim Ecol O'Farrell; Salguero-Gómez
+    ## 2           3    10.1016/j.ecoenv.2012.01.019     Ecotoxicol Environ Safety Bergek; Ma; Vetemaa; Fran
+    ## 3           1    10.1016/j.ecoenv.2012.01.019     Ecotoxicol Environ Safety Bergek; Ma; Vetemaa; Fran
+    ## 4          1a    10.1016/j.ecoenv.2012.01.019     Ecotoxicol Environ Safety Bergek; Ma; Vetemaa; Fran
+    ## 5          1b    10.1016/j.ecoenv.2012.01.019     Ecotoxicol Environ Safety Bergek; Ma; Vetemaa; Fran
+    ## 6         LAB       10.1007/s11270-014-2207-3         Water Air Soil Pollut Santadino; Coviella; Momo
+    ## 7  Simulation 10.1016/j.ecolmodel.2012.02.018                    Ecol Model Lesnoff; Corniaux; Hierna
+    ## 8           1               10.1111/nrm.12034                   Nat Res Mod  Holma; Lindroos; Oinonen
+    ## 9          57               978-1-100-23563-9 Can Tech Report Fish & Aq Sci Vélez-Espino; Ford; Arauj
+    ## 10         59               978-1-100-23563-9 Can Tech Report Fish & Aq Sci Vélez-Espino; Ford; Arauj
+    ## 11    NODC-27                10.3354/esr00657            Endangered Spp Res           Whitehead; Gero
+    ## 12         27                            <NA>                          NMFS                  Richards
+    ## 13         23                            <NA>                          NMFS                  Richards
 
 ``` r
 # COMPADRE
 compadre$metadata %>% 
-  rowwise() %>% 
-  do(SplitCountries(.$Country, .$DOI.ISBN, .$Journal,
-                    .$YearPublication, .$Authors)) %>% 
-  ungroup() %>% unique() %>% 
+  group_by(Row) %>% 
+  do(SplitCountries(.$Country)) %>% 
+  ungroup() %>% 
+  left_join(dplyr::select(compadre$metadata, Row, DOI.ISBN, Journal, Authors), by = 'Row') %>% 
+  dplyr::select(-Row) %>% 
   filter(!Country %in% country_codes$ISO, !is.na(Country)) %>% 
-  mutate(Authors = substr(Authors, 1, 35)) %>% 
+  unique() %>%
+  mutate(Authors = substr(Authors, 1, 35)) %>%
   as.data.frame()
 ```
 
-    ##   Country                         DOI.ISBN   Journal Year                             Authors
-    ## 1      NL 10.1111/j.1365-3180.2010.00787.x  Weed Res 2010 van den Berg; Gilligan; Gerdessen; 
-    ## 2     LAB                10.1890/07-0568.1 Ecol Appl 2008                               Burns
+    ##   Country                         DOI.ISBN   Journal                             Authors
+    ## 1      NL 10.1111/j.1365-3180.2010.00787.x  Weed Res van den Berg; Gilligan; Gerdessen; 
+    ## 2     LAB                10.1890/07-0568.1 Ecol Appl                               Burns
 
  
 
