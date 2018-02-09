@@ -13,7 +13,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ### Preliminaries
 
-```{r, message = F}
+```{r, message = F, warning = F}
 # load libraries
 library(dplyr)
 library(tidyr)
@@ -30,6 +30,11 @@ compadre$metadata$Row <- 1:nrow(compadre$metadata)
 
 # increase console width
 options(width = 120)
+
+# function to limit column width, for prettier Markdown document
+Subs <- function(x, n) {
+ ifelse(nchar(x) < n, x, paste0(substr(x, 1, n-2), "\u2026")) 
+}
 ```
 
 &nbsp;
@@ -51,11 +56,10 @@ comadre$metadata %>%
          n_uniq_journal = length(unique(Journal))) %>% 
   ungroup() %>% 
   filter(n_uniq_author > 1 | n_uniq_year > 1 | n_uniq_journal > 1) %>% 
-  dplyr::select(DOI.ISBN, Journal, Year = YearPublication, Authors) %>% 
+  select(DOI.ISBN, Journal, Year = YearPublication, Authors) %>% 
   unique() %>% 
   arrange(DOI.ISBN, Authors) %>% 
-  mutate(Authors = substr(Authors, 1, 40)) %>% 
-  as.data.frame()
+  print(n = 'all', width = 100)
 ```
 
 ```{r}
@@ -68,11 +72,10 @@ compadre$metadata %>%
          n_uniq_journal = length(unique(Journal))) %>% 
   ungroup() %>% 
   filter(n_uniq_author > 1 | n_uniq_year > 1 | n_uniq_journal > 1) %>% 
-  dplyr::select(DOI.ISBN, Journal, Year = YearPublication, Authors) %>% 
+  select(DOI.ISBN, Journal, Year = YearPublication, Authors) %>% 
   unique() %>% 
   arrange(DOI.ISBN, Authors) %>%
-  mutate(Authors = substr(Authors, 1, 25)) %>% 
-  as.data.frame()
+  print(n = 'all', width = 100)
 ```
 
 &nbsp;
@@ -91,11 +94,10 @@ comadre$metadata %>%
   mutate(n = length(unique(DOI.ISBN))) %>% 
   ungroup() %>% 
   filter(n > 1) %>% 
-  dplyr::select(Authors, Year = YearPublication, Journal, DOI.ISBN) %>% 
+  select(Authors, Year = YearPublication, Journal, DOI.ISBN) %>% 
   unique() %>% 
   arrange(Authors) %>% 
-  mutate(Authors = substr(Authors, 1, 35)) %>% 
-  as.data.frame()
+  mutate(Authors = Subs(Authors, 30))
 ```
 
 ```{r}
@@ -106,11 +108,97 @@ compadre$metadata %>%
   mutate(n = length(unique(DOI.ISBN))) %>% 
   ungroup() %>% 
   filter(n > 1) %>% 
-  dplyr::select(Authors, Year = YearPublication, Journal, DOI.ISBN) %>% 
+  select(Authors, Year = YearPublication, Journal, DOI.ISBN) %>% 
   unique() %>% 
   arrange(Authors) %>% 
-  mutate(Authors = substr(Authors, 1, 35)) %>% 
-  as.data.frame()
+  mutate(Authors = Subs(Authors, 30))
+```
+
+&nbsp;
+
+### DOI not found using CrossRef API
+
+The code chunk below finds DOIs listed in COM(P)ADRE that cannot be found using
+the [CrossRef API](https://github.com/CrossRef/rest-api-doc) (accessed via the R
+library [rcrossref](https://github.com/ropensci/rcrossref)).
+
+```{r}
+# # load rcrossref
+# library('rcrossref')
+# 
+# # function to get citation info for a given DOI, using rcrossref library
+# GetCitation <- function(doi) {
+#   # get citation info using rcrossref::cr_cn()
+#   ref <- try(cr_cn(dois = doi, format = "citeproc-json"))
+#   
+#   if(is.null(ref) | class(ref) == "try-error") {
+#   # if no citation found, return NAs
+#     out <- data.frame(rcross_title = NA,
+#                       rcross_author = NA,
+#                       rcross_found = FALSE,
+#                       stringsAsFactors = F)
+#   } else {
+#   # else, return title and author info (or NA if those elements not found)
+#     rcross_title <- try(ref$`container-title`)
+#     rcross_author <- try(ref$author$family[1])
+#     out <- data.frame(
+#       rcross_title = ifelse(is.null(rcross_title), NA, rcross_title),
+#       rcross_author = ifelse(is.null(rcross_author), NA, rcross_author),
+#       rcross_found = TRUE,
+#       stringsAsFactors = F
+#     )
+#   }
+#   
+#   return(out)
+# }
+# 
+# # get COMADRE citations
+# citation_comadre <- tibble(DOI.ISBN = sort(unique(comadre$metadata$DOI.ISBN))) %>% 
+#   slice(grep('^10', DOI.ISBN)) %>% # limit to DOIs, which start with "10."
+#   group_by(DOI.ISBN) %>% 
+#   do(GetCitation(.$DOI.ISBN)) %>% 
+#   ungroup()
+# 
+# # get COMPADRE citations
+# citation_compadre <- tibble(DOI.ISBN = sort(unique(compadre$metadata$DOI.ISBN))) %>% 
+#   slice(grep('^10', DOI.ISBN)) %>%  # limit to DOIs, which start with "10."
+#   group_by(DOI.ISBN) %>% 
+#   do(GetCitation(.$DOI.ISBN)) %>% 
+#   ungroup()
+# 
+# # write to file
+# write.csv(citation_comadre, 'crossref_comadre.csv', row.names = F)
+# write.csv(citation_compadre, 'crossref_compadre.csv', row.names = F)
+```
+
+```{r}
+# read citation data already written to file
+citation_comadre <- read.csv('crossref_comadre.csv', stringsAsFactors = F)
+citation_compadre <- read.csv('crossref_compadre.csv', stringsAsFactors = F)
+```
+
+```{r}
+# COMADRE
+comadre$metadata %>% 
+  select(DOI.ISBN, Journal, Year = YearPublication, Authors) %>% 
+  unique() %>% 
+  slice(grep('^10', DOI.ISBN)) %>% 
+  left_join(citation_comadre, by = 'DOI.ISBN') %>% 
+  filter(rcross_found == FALSE) %>% 
+  select(-rcross_author, -rcross_title) %>% 
+  mutate(Authors = Subs(Authors, 30))
+```
+
+```{r}
+# COMPADRE
+compadre$metadata %>% 
+  select(DOI.ISBN, Journal, Year = YearPublication, Authors) %>% 
+  unique() %>% 
+  slice(grep('^10', DOI.ISBN)) %>% 
+  left_join(citation_compadre, by = 'DOI.ISBN') %>% 
+  filter(rcross_found == FALSE) %>% 
+  select(-rcross_author, -rcross_title) %>% 
+  mutate(Authors = Subs(Authors, 30))
 ```
 
 &nbsp;
@@ -131,25 +219,27 @@ irregular <- '[[:space:]][[:space:]]+|\\;[[:alpha:]]+|\\,+'
 ```{r}
 # COMADRE
 comadre$metadata %>% 
-  dplyr::select(DOI.ISBN, Journal, Year = YearPublication, Authors) %>% 
+  select(DOI.ISBN, Journal, Year = YearPublication, Authors) %>% 
   unique() %>% 
   mutate(irreg = grepl(irregular, Authors)) %>% 
   filter(irreg == TRUE) %>% 
-  dplyr::select(-irreg) %>% 
+  select(-irreg) %>% 
   arrange(Authors) %>% 
-  mutate(Authors = substr(Authors, 1, 40))
+  as_tibble() %>% 
+  print(width = 100)
 ```
 
 ```{r}
 # COMPADRE
 compadre$metadata %>% 
-  dplyr::select(DOI.ISBN, Journal, Year = YearPublication, Authors) %>% 
+  select(DOI.ISBN, Journal, Year = YearPublication, Authors) %>% 
   unique() %>% 
   mutate(irreg = grepl(irregular, Authors)) %>% 
   filter(irreg == TRUE) %>% 
-  dplyr::select(-irreg) %>% 
+  select(-irreg) %>% 
   arrange(Authors) %>% 
-  mutate(Authors = substr(Authors, 1, 40))
+  as_tibble() %>% 
+  print(width = 100)
 ```
 
 &nbsp;
@@ -179,12 +269,11 @@ comadre$metadata %>%
   group_by(Row) %>% 
   do(SplitCountries(.$Country)) %>% 
   ungroup() %>% 
-  left_join(dplyr::select(comadre$metadata, Row, DOI.ISBN, Journal, Authors), by = 'Row') %>% 
-  dplyr::select(-Row) %>% 
+  left_join(select(comadre$metadata, Row, DOI.ISBN, Journal, Authors), by = 'Row') %>% 
+  select(-Row) %>% 
   filter(!Country %in% country_codes$ISO, !is.na(Country)) %>% 
   unique() %>% 
-  mutate(Authors = substr(Authors, 1, 25)) %>% 
-  as.data.frame()
+  print(width = 100)
 ```
 
 ```{r}
@@ -193,12 +282,11 @@ compadre$metadata %>%
   group_by(Row) %>% 
   do(SplitCountries(.$Country)) %>% 
   ungroup() %>% 
-  left_join(dplyr::select(compadre$metadata, Row, DOI.ISBN, Journal, Authors), by = 'Row') %>% 
-  dplyr::select(-Row) %>% 
+  left_join(select(compadre$metadata, Row, DOI.ISBN, Journal, Authors), by = 'Row') %>% 
+  select(-Row) %>% 
   filter(!Country %in% country_codes$ISO, !is.na(Country)) %>% 
   unique() %>%
-  mutate(Authors = substr(Authors, 1, 35)) %>%
-  as.data.frame()
+  print(width = 100)
 ```
 
 &nbsp;
@@ -226,10 +314,10 @@ tibble(DOI.ISBN = comadre$metadata$DOI.ISBN,
   mutate(flag = map_lgl(matrixClass, MatrixClassCheck)) %>% 
   filter(flag == TRUE) %>% 
   unnest() %>% 
-  dplyr::select(-flag, -MatrixClassAuthor) %>% 
-  mutate(Authors = substr(Authors, 1, 25)) %>% 
-  mutate(MatrixClassOrganized = substr(MatrixClassOrganized, 1, 20)) %>% 
-  as.data.frame()
+  select(-flag, -MatrixClassAuthor) %>% 
+  mutate(Authors = Subs(Authors, 30)) %>%  
+  mutate(MatrixClassOrganized = Subs(MatrixClassOrganized, 20)) %>% 
+  print(n = 'all')
 ```
 
 ```{r}
@@ -241,8 +329,8 @@ tibble(DOI.ISBN = compadre$metadata$DOI.ISBN,
   mutate(flag = map_lgl(matrixClass, MatrixClassCheck)) %>% 
   filter(flag == TRUE) %>% 
   unnest() %>% 
-  dplyr::select(-flag, -MatrixClassAuthor) %>% 
-  mutate(Authors = substr(Authors, 1, 25)) %>% 
-  mutate(MatrixClassOrganized = substr(MatrixClassOrganized, 1, 20)) %>% 
-  as.data.frame()
+  select(-flag, -MatrixClassAuthor) %>% 
+  mutate(Authors = Subs(Authors, 30)) %>% 
+  mutate(MatrixClassOrganized = Subs(MatrixClassOrganized, 20)) %>% 
+  print(n = 'all')
 ```
