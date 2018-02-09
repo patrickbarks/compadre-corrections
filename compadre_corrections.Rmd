@@ -116,15 +116,16 @@ compadre$metadata %>%
 
 &nbsp;
 
-### DOI not found using CrossRef API
+### Get CrossRef citation info associated with each unique DOI
 
-The code chunk below finds DOIs listed in COM(P)ADRE that cannot be found using
-the [CrossRef API](https://github.com/CrossRef/rest-api-doc) (accessed via the R
-library [rcrossref](https://github.com/ropensci/rcrossref)).
+The code chunk below obtains citation info (journal title and first author) for
+each unique DOI in COM(P)ADRE using the [CrossRef
+API](https://github.com/CrossRef/rest-api-doc) (accessed via the R library
+[rcrossref](https://github.com/ropensci/rcrossref)).
 
 ```{r}
 # # load rcrossref
-# library('rcrossref')
+# library(rcrossref)
 # 
 # # function to get citation info for a given DOI, using rcrossref library
 # GetCitation <- function(doi) {
@@ -172,10 +173,17 @@ library [rcrossref](https://github.com/ropensci/rcrossref)).
 ```
 
 ```{r}
-# read citation data already written to file
+# read CrossRef citation data already written to file
 citation_comadre <- read.csv('crossref_comadre.csv', stringsAsFactors = F)
 citation_compadre <- read.csv('crossref_compadre.csv', stringsAsFactors = F)
 ```
+
+&nbsp;
+
+### DOI not found using the CrossRef API
+
+The code chunk below finds DOIs listed in COM(P)ADRE that cannot be found using
+the CrossRef API. These likely reflect errors in the `DOI.ISBN` column.
 
 ```{r}
 # COMADRE
@@ -199,6 +207,62 @@ compadre$metadata %>%
   filter(rcross_found == FALSE) %>% 
   select(-rcross_author, -rcross_title) %>% 
   mutate(Authors = Subs(Authors, 30))
+```
+
+&nbsp;
+
+### Inconsistent journal title abbreviations
+
+The code chunk below finds instances where there are multiple unique entries in
+the `Journal` column for a given CrossRef-obtained journal title. Some of these
+reflect inconsistencies in journal title abbreviations, while others reflect an
+error in the `DOI.ISBN` column.
+
+```{r}
+# function to calculate the number of unique entries in the Journal column,
+#  and the number of unique entries in DOI.ISBN for a given Journal entry
+CheckAbbrevs <- function(dat) {
+  dat %>%
+    mutate(n_abbrev = length(unique(Journal))) %>% 
+    group_by(Journal) %>% 
+    mutate(n_doi = length(unique(DOI.ISBN))) %>%
+    mutate(DOI = ifelse(n_doi > 1, "mult", unique(DOI.ISBN))) %>%
+    ungroup() %>% 
+    select(n_abbrev, Journal, n_doi, DOI) %>% 
+    unique()
+}
+```
+
+```{r}
+# COMADRE
+comadre$metadata %>% 
+  select(DOI.ISBN, Journal) %>% 
+  unique() %>% 
+  left_join(citation_comadre, by = 'DOI.ISBN') %>% 
+  filter(rcross_found == TRUE) %>% 
+  group_by(rcross_title) %>% 
+  do(CheckAbbrevs(.)) %>% 
+  ungroup() %>% 
+  filter(n_abbrev > 2) %>% 
+  select(-n_abbrev) %>% 
+  mutate(rcross_title = Subs(rcross_title, 30)) %>% 
+  print(n = 'all')
+```
+
+```{r}
+# COMPADRE
+compadre$metadata %>% 
+  select(DOI.ISBN, Journal) %>% 
+  unique() %>% 
+  left_join(citation_compadre, by = 'DOI.ISBN') %>% 
+  filter(rcross_found == TRUE) %>% 
+  group_by(rcross_title) %>% 
+  do(CheckAbbrevs(.)) %>% 
+  ungroup() %>% 
+  filter(n_abbrev > 2) %>% 
+  select(-n_abbrev) %>% 
+  mutate(rcross_title = Subs(rcross_title, 30)) %>% 
+  print(n = 'all')
 ```
 
 &nbsp;

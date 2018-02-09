@@ -192,13 +192,13 @@ compadre$metadata %>%
 
  
 
-### DOI not found using CrossRef API
+### Get CrossRef citation info associated with each unique DOI
 
-The code chunk below finds DOIs listed in COM(P)ADRE that cannot be found using the [CrossRef API](https://github.com/CrossRef/rest-api-doc) (accessed via the R library [rcrossref](https://github.com/ropensci/rcrossref)).
+The code chunk below obtains citation info (journal title and first author) for each unique DOI in COM(P)ADRE using the [CrossRef API](https://github.com/CrossRef/rest-api-doc) (accessed via the R library [rcrossref](https://github.com/ropensci/rcrossref)).
 
 ``` r
 # # load rcrossref
-# library('rcrossref')
+# library(rcrossref)
 # 
 # # function to get citation info for a given DOI, using rcrossref library
 # GetCitation <- function(doi) {
@@ -246,10 +246,16 @@ The code chunk below finds DOIs listed in COM(P)ADRE that cannot be found using 
 ```
 
 ``` r
-# read citation data already written to file
+# read CrossRef citation data already written to file
 citation_comadre <- read.csv('crossref_comadre.csv', stringsAsFactors = F)
 citation_compadre <- read.csv('crossref_compadre.csv', stringsAsFactors = F)
 ```
+
+ 
+
+### DOI not found using the CrossRef API
+
+The code chunk below finds DOIs listed in COM(P)ADRE that cannot be found using the CrossRef API. These likely reflect errors in the `DOI.ISBN` column.
 
 ``` r
 # COMADRE
@@ -295,6 +301,122 @@ compadre$metadata %>%
     ## 1 10.1007/s00442-009-1354-6  Oeco       2009  Schutzenhofer; Valone; Knight F           
     ## 2 10.1007/sl0l44-005-0238-8  Popul Ecol 2006  Gross; Morris; Wolosin; Doak  F           
     ## 3 10.1007/sl 1258-008-9460-8 PhD thesis 2009  Schmucki                      F
+
+ 
+
+### Inconsistent journal title abbreviations
+
+The code chunk below finds instances where there are multiple unique entries in the `Journal` column for a given CrossRef-obtained journal title. Some of these reflect inconsistencies in journal title abbreviations, while others reflect an error in the `DOI.ISBN` column.
+
+``` r
+# function to calculate the number of unique entries in the Journal column,
+#  and the number of unique entries in DOI.ISBN for a given Journal entry
+CheckAbbrevs <- function(dat) {
+  dat %>%
+    mutate(n_abbrev = length(unique(Journal))) %>% 
+    group_by(Journal) %>% 
+    mutate(n_doi = length(unique(DOI.ISBN))) %>%
+    mutate(DOI = ifelse(n_doi > 1, "mult", unique(DOI.ISBN))) %>%
+    ungroup() %>% 
+    select(n_abbrev, Journal, n_doi, DOI) %>% 
+    unique()
+}
+```
+
+``` r
+# COMADRE
+comadre$metadata %>% 
+  select(DOI.ISBN, Journal) %>% 
+  unique() %>% 
+  left_join(citation_comadre, by = 'DOI.ISBN') %>% 
+  filter(rcross_found == TRUE) %>% 
+  group_by(rcross_title) %>% 
+  do(CheckAbbrevs(.)) %>% 
+  ungroup() %>% 
+  filter(n_abbrev > 2) %>% 
+  select(-n_abbrev) %>% 
+  mutate(rcross_title = Subs(rcross_title, 30)) %>% 
+  print(n = 'all')
+```
+
+    ## # A tibble: 36 x 4
+    ##    rcross_title                  Journal                   n_doi DOI                                           
+    ##    <chr>                         <chr>                     <int> <chr>                                         
+    ##  1 Biological Conservation       Biol Conserv                  1 10.1016/j.biocon.2004.01.029                  
+    ##  2 Biological Conservation       Biol Cons                    26 mult                                          
+    ##  3 Biological Conservation       2008                          1 10.1016/j.biocon.2007.10.006                  
+    ##  4 Conservation Biology          Cons Biol                    12 mult                                          
+    ##  5 Conservation Biology          Conserv Biol                  3 mult                                          
+    ##  6 Conservation Biology          Biol Cons                     1 10.1046/j.1523-1739.1998.97054.x              
+    ##  7 Copeia                        Ecol Appl                     1 10.2307/1447430                               
+    ##  8 Copeia                        Wildlife Research             1 10.2307/1447430                               
+    ##  9 Copeia                        Cons Biol                     1 10.2307/1447430                               
+    ## 10 Copeia                        Herpetologica                 2 mult                                          
+    ## 11 Copeia                        Copeia                        3 mult                                          
+    ## 12 Copeia                        Ecology                       1 10.2307/1447430                               
+    ## 13 Ecotoxicology and Environmen… Ecotox & Env Sav              1 10.1016/j.ecoenv.2005.05.017                  
+    ## 14 Ecotoxicology and Environmen… Ecotoxicol Environ Safety     1 10.1016/j.ecoenv.2012.01.019                  
+    ## 15 Ecotoxicology and Environmen… Ecotox Environ Safe           1 10.1006/eesa.1996.0045                        
+    ## 16 Environmental Toxicology and… Env Tox                       1 10.1002/etc.2972                              
+    ## 17 Environmental Toxicology and… Environ Toxicol Chem          1 10.1897/04-160.1                              
+    ## 18 Environmental Toxicology and… Env Tox & Chem                1 10.1002/etc.5620210425                        
+    ## 19 Journal of Wildlife Manageme… J Wild Manage                 1 10.2193/2006-146                              
+    ## 20 Journal of Wildlife Manageme… J Wild Manag                  3 mult                                          
+    ## 21 Journal of Wildlife Manageme… J Wildlife Manag              1 10.2193/0022-541X(2006)70[246:CPDAVI]2.0.CO;2 
+    ## 22 Journal of Wildlife Manageme… J Wildlife Manage             1 10.2193/0022-541X(2006)70[1094:GASOBB]2.0.CO;2
+    ## 23 Marine Ecology Progress Seri… Mar Ecol Prog Series          1 10.3354/meps234229                            
+    ## 24 Marine Ecology Progress Seri… Mar Ecol Prog Ser             4 mult                                          
+    ## 25 Marine Ecology Progress Seri… Mar Ecol Pro Ser              2 mult                                          
+    ## 26 Marine Ecology Progress Seri… Ecology                       1 10.3354/meps339093                            
+    ## 27 Marine Ecology Progress Seri… Mar Ecol-Prog Ser             1 10.3354/meps10547                             
+    ## 28 Marine Ecology Progress Seri… Fresh Biol                    1 10.3354/meps10377                             
+    ## 29 The Journal of Wildlife Mana… J Wildlife Manag              1 10.2307/3802689                               
+    ## 30 The Journal of Wildlife Mana… J Wild Manag                  7 mult                                          
+    ## 31 The Journal of Wildlife Mana… J Wildlife Manage             6 mult                                          
+    ## 32 The Journal of Wildlife Mana… J Wild Manage                 1 10.2307/3803072                               
+    ## 33 The Journal of Wildlife Mana… Neu Par Sci Comp              1 10.1002/jwmg.835                              
+    ## 34 Wildlife Research             Wildl Res                     1 10.1071/WR10080                               
+    ## 35 Wildlife Research             Wild Res                      1 10.1071/WR00104                               
+    ## 36 Wildlife Research             Aust Wildlife Res             1 10.1071/wr9850541
+
+``` r
+# COMPADRE
+compadre$metadata %>% 
+  select(DOI.ISBN, Journal) %>% 
+  unique() %>% 
+  left_join(citation_compadre, by = 'DOI.ISBN') %>% 
+  filter(rcross_found == TRUE) %>% 
+  group_by(rcross_title) %>% 
+  do(CheckAbbrevs(.)) %>% 
+  ungroup() %>% 
+  filter(n_abbrev > 2) %>% 
+  select(-n_abbrev) %>% 
+  mutate(rcross_title = Subs(rcross_title, 30)) %>% 
+  print(n = 'all')
+```
+
+    ## # A tibble: 19 x 4
+    ##    rcross_title           Journal           n_doi DOI                                            
+    ##    <chr>                  <chr>             <int> <chr>                                          
+    ##  1 Acta Oecologica        Bas and Appl Ecol     1 10.1016/j.actao.2007.11.005                    
+    ##  2 Acta Oecologica        Acta Oecol            2 mult                                           
+    ##  3 Acta Oecologica        Acta Oeco             5 mult                                           
+    ##  4 Annals of Botany       Ann Bot               2 mult                                           
+    ##  5 Annals of Botany       Annals Bot            1 10.1093/aob/mcp047                             
+    ##  6 Annals of Botany       Am J Bot              1 10.1093/aob/mcm204                             
+    ##  7 Austral Ecology        Aust Ecol             3 mult                                           
+    ##  8 Austral Ecology        Austral Ecol          2 mult                                           
+    ##  9 Austral Ecology        Aust J Ecol           4 mult                                           
+    ## 10 Austral Ecology        Aust J Bot            1 10.1111/j.1442-9993.1988.tb00999.x             
+    ## 11 Ecology                Ecology              42 mult                                           
+    ## 12 Ecology                J Ecol                1 10.1890/0012-9658(2001)082[1720:ESOALV]2.0.CO;2
+    ## 13 Ecology                Ecol Appl / Ecol      1 10.1890/08-0111.1                              
+    ## 14 New Phytologist        New Phytol            1 10.1111/j.1469-8137.2007.02170.x               
+    ## 15 New Phytologist        New Phyto             4 mult                                           
+    ## 16 New Phytologist        Ecol Monog            1 10.1111/j.1469-8137.1984.tb03596.x             
+    ## 17 The Journal of Ecology J Ecol               20 mult                                           
+    ## 18 The Journal of Ecology Book                  1 10.2307/2261246                                
+    ## 19 The Journal of Ecology Ecology               1 10.2307/2259545
 
  
 
