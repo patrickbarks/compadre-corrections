@@ -1,0 +1,154 @@
+---
+title: "matA != (matU + matF + matC)"
+author: "Patrick Barks"
+date: '2018-02-28'
+output: github_document
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+&nbsp;
+
+### Preliminaries
+
+```{r, message = F, warning = F}
+# load libraries
+library(tibble)
+library(dplyr)
+library(Rcompadre)
+
+# load Comadre and Compadre databases
+load('COMADRE_v.X.X.X.RData')
+load('COMPADRE_v.X.X.X.RData')
+
+# add row ids to metadata
+comadre$metadata$id <- 1:nrow(comadre$metadata)
+compadre$metadata$id <- 1:nrow(compadre$metadata)
+
+# increase console width
+options(width = 100)
+
+# function to add three matrices (replacing NA with 0)
+AddMats <- function(M1, M2, M3) {
+  M1[which(is.na(M1))] <- 0
+  M2[which(is.na(M2))] <- 0
+  M3[which(is.na(M3))] <- 0
+  out <- M1 + M2 + M3
+  colnames(out) <- NULL
+  return(out)
+}
+
+# function to test whether all elements of two matrices equal
+CompareMats <- function(A, B, prec = 0.000001) {
+  return(all(abs(A - B) < prec))
+}
+```
+
+### Compadre
+
+```{r}
+# subset to divided matrices
+compadre_div <- subsetDB(compadre, MatrixSplit == 'Divided')
+
+# create separate lists for mat A, U, F, C
+matA <- lapply(compadre_div$mat, function(x) x$matA)
+matU <- lapply(compadre_div$mat, function(x) x$matU)
+matF <- lapply(compadre_div$mat, function(x) x$matF)
+matC <- lapply(compadre_div$mat, function(x) x$matC)
+
+# matU + matF + matC
+sumUFC <- mapply(AddMats, matU, matF, matC, USE.NAMES = FALSE)
+
+# compare matA to (matU + matF + matC)
+mat_compare <- mapply(CompareMats, matA, sumUFC, USE.NAMES = FALSE)
+mat_mismatch <- which(mat_compare == FALSE)
+
+# which matA != (matU + matF + matC)
+mat_mismatch
+```
+
+Take a closer look at some of the mismatches:
+
+```{r}
+# choose index of non-matching matrix
+i <- mat_mismatch[161]
+
+# see which transitions don't match (indicated with FALSE)
+abs(matA[[i]] - sumUFC[[i]]) < 0.000001
+
+# compare matA to (matU + matF + matC)
+matA[[i]]; sumUFC[[i]]
+```
+
+In this case, it looks like fecundity transitions from the top two rows have been duplicated in matU.
+
+```{r}
+# check individual U and F (and C, if applicable)
+matU[[i]]; matF[[i]]
+```
+
+Print metadata for all non-matching matrices:
+
+```{r}
+mismatch_compadre <- compadre_div$metadata %>% 
+  slice(mat_mismatch) %>% 
+  dplyr::select(-id)
+
+write.csv(mismatch_compadre, 'mismatch_matA_compadre.csv', row.names = F)
+```
+
+### Comadre
+
+```{r}
+# subset to divided matrices
+comadre_div <- subsetDB(comadre, MatrixSplit == 'Divided')
+
+# create separate lists for mat A, U, F, C
+matA <- lapply(comadre_div$mat, function(x) x$matA)
+matU <- lapply(comadre_div$mat, function(x) x$matU)
+matF <- lapply(comadre_div$mat, function(x) x$matF)
+matC <- lapply(comadre_div$mat, function(x) x$matC)
+
+# matU + matF + matC
+sumUFC <- mapply(AddMats, matU, matF, matC, USE.NAMES = FALSE)
+
+# compare matA to (matU + matF + matC)
+mat_compare <- mapply(CompareMats, matA, sumUFC, USE.NAMES = FALSE)
+mat_mismatch <- which(mat_compare == FALSE)
+
+# which matA != (matU + matF + matC)
+mat_mismatch
+```
+
+We can take a closer look at some of the mismatches:
+
+```{r}
+# choose index of non-matching matrix
+i <- mat_mismatch[3]
+
+# see which transitions don't match (indicated with FALSE)
+abs(matA[[i]] - sumUFC[[i]]) < 0.000001
+
+# compare matA to (matU + matF + matC)
+matA[[i]]; sumUFC[[i]]
+```
+
+In this case, the U, F, and C matrices contain all zeros, even though MatrixSplit == 'Divided'.
+
+```{r}
+# check individual U, F, and C matrices
+matU[[i]]; matF[[i]]; matC[[i]]
+```
+
+Print metadata for all non-matching matrices:
+
+```{r}
+mismatch_comadre <- comadre_div$metadata %>% 
+  slice(mat_mismatch) %>% 
+  dplyr::select(-id)
+
+write.csv(mismatch_comadre, 'mismatch_matA_comadre.csv', row.names = F)
+```
+
